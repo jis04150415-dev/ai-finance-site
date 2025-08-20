@@ -1,6 +1,7 @@
 import StatCard from '@/components/StatCard'
 import AdSlot from '@/components/AdSlot'
 import { getFx, getGold, getIndices } from '@/lib/fetchers'
+import RealtimeIndices from '@/components/RealtimeIndices'
 
 export const revalidate = 600 // 10분 재검증 (ISR)
 
@@ -64,20 +65,7 @@ export default async function Page() {
 
       {/* 주요 지수 */}
       <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-2">주요 지수</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(Array.isArray(indices) ? indices : []).map((i) => (
-            <StatCard
-              key={i.symbol}
-              title={i.shortName || i.symbol}
-              value={
-                i.regularMarketPrice == null
-                  ? '-'
-                  : i.regularMarketPrice.toLocaleString()
-              }
-            />
-          ))}
-        </div>
+        <RealtimeIndices intervalMs={15000} />
       </div>
 
       {/* AI 코멘트 + 광고 */}
