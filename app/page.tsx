@@ -1,13 +1,15 @@
 import StatCard from '@/components/StatCard'
 import AdSlot from '@/components/AdSlot'
-import { getFx, getGold, getIndices } from '@/lib/fetchers'
+import { getFx, getGold } from '@/lib/fetchers'
 import RealtimeIndices from '@/components/RealtimeIndices'
+import RealtimeFx from '@/components/RealtimeFx'
 
 export const revalidate = 600 // 10분 재검증 (ISR)
 
 export default async function Page() {
   // 서버에서 데이터 병렬 수집
-  const [fx, gold, indices] = await Promise.all([getFx(), getGold(), getIndices()])
+  const [fx, gold] = await Promise.all([getFx(), getGold()])
+  const indices: any[] = [] // indices are fetched client-side via <RealtimeIndices>
 
   // 요약 생성 (실패 시 기본 메시지)
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
@@ -22,28 +24,10 @@ export default async function Page() {
 
   return (
     <main className="p-4 md:p-6 max-w-6xl mx-auto">
-      {/* 환율 */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard
-          title="USD/KRW"
-          value={
-            fx?.usdkrw != null
-              ? `${Math.round(fx.usdkrw).toLocaleString()}원`
-              : '-'
-          }
-          sub={fx?.date ? `업데이트: ${fx.date}` : undefined}
-        />
-        <StatCard
-          title="USD/JPY"
-          value={fx?.usdjpy != null ? fx.usdjpy.toFixed(2) : '-'}
-          sub={fx?.date ? `업데이트: ${fx.date}` : undefined}
-        />
-        <StatCard
-          title="USD/EUR"
-          value={fx?.usdeur != null ? fx.usdeur.toFixed(4) : '-'}
-          sub={fx?.date ? `업데이트: ${fx.date}` : undefined}
-        />
-      </section>
+      {/* 환율 (실시간, 전일 대비) */}
+      <div className="mt-2">
+        <RealtimeFx intervalMs={15000} />
+      </div>
 
       {/* 금 시세 */}
       <section className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -63,7 +47,7 @@ export default async function Page() {
         />
       </section>
 
-      {/* 주요 지수 */}
+      {/* 주요 지수 (실시간) */}
       <div className="mt-8">
         <RealtimeIndices intervalMs={15000} />
       </div>
