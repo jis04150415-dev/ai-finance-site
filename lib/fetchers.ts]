@@ -1,0 +1,117 @@
+import 'server-only'
+
+/** ===== 환율: Frankfurter (무·키) ===== */
+type FrankfurterResp = {
+  amount: number
+  base: string
+  date: string
+  rates: Record<string, number>
+}
+
+export async function getFx() {
+  const url = 'https://api.frankfurter.app/latest?from=USD&to=KRW,JPY,EUR'
+  const r = await fetch(url, { next: { revalidate: 600 } })
+  if (!r.ok) throw new Error(`FX fetch failed: ${r.status}`)
+  const data = (await r.json()) as FrankfurterResp
+
+  return {
+    date: data.date,
+    usdkrw: data.rates?.KRW ?? 0,
+    usdjpy: data.rates?.JPY ?? 0,
+    usdeur: data.rates?.EUR ?? 0,
+  }
+}
+
+/** ===== 금 시세: Yahoo(GC=F) + 환율(USD→KRW) =====
+ * - GC=F: 금 선물(USD/oz) 근사치
+ * - KRW/oz = USD/oz × USDKRW
+ */
+// ==== getGold 교체 시작 ====
+type YahooQuoteResp = {
+  quoteResponse: { result: Array<{
+    symbol: string
+    shortName?: string
+    regularMarketPrice?: number
+  }> }
+}
+
+async function fetchYahooPrice(symbol: string) {
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`
+  const r = await fetch(url, { next: { revalidate: 600 } })
+  if (!r.ok) throw new Error(`Yahoo fetch failed: ${r.status}`)
+  const data = (await r.json()) as YahooQuoteResp
+  return data.quoteResponse.result?.[0]?.regularMarketPrice ?? null
+}
+
+export async function getGold() {
+  try {
+    // 1) 금(USD/oz): 스팟(XAUUSD=X) → 실패 시 선물(GC=F) 폴백
+    let usdPerOunce = await fetchYahooPrice('XAUUSD=X')
+    if (!usdPerOunce || !Number.isFinite(usdPerOunce)) {
+      usdPerOunce = await fetchYahooPrice('GC=F')
+    }
+    if (!usdPerOunce || !Number.isFinite(usdPerOunce)) {
+      // 실값을 얻지 못한 경우에도 Zod 스키마를 만족시키기 위해 숫자 반환
+      return {
+        usdPerOunce: 0,
+        krwPerOunce: 0,
+        date: new Date().toISOString().slice(0,10),
+      }
+    }
+
+    // 2) USD→KRW 환율
+    const fxUrl = 'https://api.frankfurter.app/latest?from=USD&to=KRW'
+    const fr = await fetch(fxUrl, { next: { revalidate: 600 } })
+    const fdata = await fr.json() as { date: string; rates: Record<string, number> }
+    const usdkrw = fdata?.rates?.KRW ?? 0
+
+    return {
+      usdPerOunce: Number(usdPerOunce.toFixed(2)),                 // 소수 2자리
+      krwPerOunce: Number((usdPerOunce * (usdkrw || 0)).toFixed(0)), // 정수 원화
+      date: fdata?.date || new Date().toISOString().slice(0,10),
+    }
+  } catch {
+    return {
+      usdPerOunce: 0,
+      krwPerOunce: 0,
+      date: new Date().toISOString().slice(0,10),
+    }
+  }
+}
+// ==== getGold 교체 끝 ====
+// ==== getIndexes / getIndices 교체 시작 ====
+type IndexItem = {
+  symbol: string
+  shortName?: string
+  regularMarketPrice?: number | null
+}
+
+export async function getIndexes(): Promise<IndexItem[]> {
+  try {
+    // S&P500, NASDAQ-100, KOSPI, KOSDAQ
+    const symbols = ['^GSPC','^NDX','^KS11','^KQ11'].join(',')
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`
+    const r = await fetch(url, { next: { revalidate: 600 } })
+    if (!r.ok) throw new Error(`Index fetch failed: ${r.status}`)
+
+    const data = (await r.json()) as {
+      quoteResponse: { result: Array<{ symbol: string; shortName?: string; regularMarketPrice?: number }> }
+    }
+
+    const arr: IndexItem[] = (data.quoteResponse?.result ?? []).map(q => ({
+      symbol: q.symbol,
+      shortName: q.shortName,
+      regularMarketPrice: Number.isFinite(q.regularMarketPrice!) ? q.regularMarketPrice! : null,
+    }))
+
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return [] // 실패 시에도 배열 보장 → page.tsx의 map 안전
+  }
+}
+
+// page.tsx에서 getIndices 이름을 임포트하므로 별칭 유지
+export async function getIndices() {
+  return getIndexes()
+}
+// ==== getIndexes / getIndices 교체 끝 ====
