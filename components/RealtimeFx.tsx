@@ -9,6 +9,7 @@ type FxRow = {
   chg: number | null
   chgPct: number | null
 }
+
 type FxResp = {
   ok: boolean
   date?: string
@@ -21,16 +22,15 @@ type FxResp = {
   error?: string
 }
 
+// 간단 로케일/타임존 감지
 function useLocale() {
-  if (typeof window === 'undefined') return { lang: 'ko', tz: 'Asia/Seoul' }
+  if (typeof window === 'undefined') return { lang: 'ko', tz: 'Asia/Seoul' as string }
   const lang = (navigator.language || 'ko').split('-')[0]
+  let tz: string = 'UTC'
   try {
-    // @ts-ignore
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-    return { lang, tz }
-  } catch {
-    return { lang, tz: 'UTC' }
-  }
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch { /* noop */ }
+  return { lang, tz }
 }
 
 function formatNumber(n: number, lang = 'ko') {
@@ -41,14 +41,18 @@ function formatNumber(n: number, lang = 'ko') {
   }
 }
 
-function Arrow({ v }: { v: number }) {
-  if (v > 0) return <span className="ml-1">▲</span>
-  if (v < 0) return <span className="ml-1">▼</span>
-  return null
-}
+const LABELS = {
+  ko: { title: '환율 (전일 대비)', updated: '업데이트' },
+  ja: { title: '為替（前日比）', updated: '更新' },
+  en: { title: 'FX Rates (DoD Change)', updated: 'Updated' },
+} as const
+
+type LangKey = keyof typeof LABELS
+const toKey = (lang: string): LangKey => (lang === 'ko' ? 'ko' : lang === 'ja' ? 'ja' : 'en')
 
 export default function RealtimeFx({ intervalMs = 15000 }: { intervalMs?: number }) {
   const { lang, tz } = useLocale()
+  const langKey = toKey(lang)
   const [data, setData] = useState<FxRow[] | null>(null)
   const [lastAt, setLastAt] = useState<Date | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -69,7 +73,7 @@ export default function RealtimeFx({ intervalMs = 15000 }: { intervalMs?: number
         chgPct: x.chgPct ?? 0
       })))
       setLastAt(new Date())
-    } catch (e) {
+    } catch {
       setErr('fx_failed')
     }
   }
@@ -94,12 +98,14 @@ export default function RealtimeFx({ intervalMs = 15000 }: { intervalMs?: number
     }
   }, [lastAt, lang, tz])
 
+  const rows: (FxRow | null)[] = data ?? [null, null, null];
+
   return (
     <section>
       <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-xl font-semibold">환율 (전일 대비)</h2>
+        <h2 className="text-xl font-semibold">{LABELS[langKey].title}</h2>
         <div className="text-xs text-[var(--muted)]">
-          {updatedText ? `업데이트: ${updatedText}` : ''}
+          {updatedText ? `${LABELS[langKey].updated}: ${updatedText}` : ''}
         </div>
       </div>
 
@@ -108,7 +114,7 @@ export default function RealtimeFx({ intervalMs = 15000 }: { intervalMs?: number
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {(data ?? [1,2,3].map(() => null)).map((row, idx) => {
+        {rows.map((row, idx) => {
           if (!row) {
             // 스켈레톤
             return (
@@ -117,20 +123,21 @@ export default function RealtimeFx({ intervalMs = 15000 }: { intervalMs?: number
           }
           const up = (row.chg ?? 0) > 0
           const down = (row.chg ?? 0) < 0
-          const color = up ? 'text-emerald-400' : (down ? 'text-red-400' : 'text-[var(--muted)]')
+          const color = up ? 'text-emerald-500' : (down ? 'text-red-500' : 'text-[var(--muted)]')
+          const arrow = up ? '▲ ' : (down ? '▼ ' : '• ')
+          const sign = up ? '+' : ''
+
           return (
             <StatCard
               key={row.name}
               title={row.name}
               value={row.value == null ? '-' : formatNumber(row.value, lang)}
               sub={
-                row.chg != null && row.chgPct != null
-                  ? <span className={color}>
-                      {row.chg > 0 ? '+' : ''}{row.chg.toFixed(4)}
-                      {' '}({row.chgPct > 0 ? '+' : ''}{row.chgPct.toFixed(2)}%)
-                      <Arrow v={row.chg} />
-                    </span>
-                  : undefined
+                row.chg != null && row.chgPct != null ? (
+                  <span className={color}>
+                    {arrow}{sign}{row.chg.toFixed(4)} ({row.chgPct > 0 ? '+' : ''}{row.chgPct.toFixed(2)}%)
+                  </span>
+                ) : undefined
               }
             />
           )
