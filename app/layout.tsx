@@ -12,6 +12,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }){
   const client = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID as string | undefined
   return (
     <html lang="ko">
+      <head>
+        {/* ✅ Google AdSense 계정 연결용 메타 태그 */}
+        <meta name="google-adsense-account" content="ca-pub-4138822307041326" />
+      </head>
       <body>
         <div className="max-w-6xl mx-auto p-5">
           <header className="mb-6 flex items-center justify-between">
